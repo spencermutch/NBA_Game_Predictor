@@ -22,20 +22,33 @@ def getSeason (games, gameDate):
     # Get index for first game 2021-2022
     games.reset_index()
     iSeason = games[games.GAME_DATE.str[:] == gameDate].index[0]
-    gameID = games.loc[iSeason, 'GAME_ID']
     print(games.loc[iSeason, 'SEASON_ID'])
-    i = 0
+
+    seasonID = "2" + gameDate[0:4]
+    seasonGames = games[(games.SEASON_ID == seasonID)].copy().reset_index()
+
+    i = seasonGames[seasonGames.GAME_DATE.str[:] == gameDate].index[-1]
+    print(i)
 
     # Create new dataframe to add all data to
     dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Away', 'Away Pts', 'WL'])
 
     # Stop looping once we've found all games for the season
-    while (i < 1230):
+    while (i >= 0):
         home = ""
         away = ""
         homePts = 0
         awayPts = 0
         winLoss = ""
+
+        # Since NBA_API creates a 2 entries per game (One for away, one for home) skip any entries for away teams
+        checkDup = seasonGames.loc[i, 'MATCHUP']
+        if (not(checkDup[4:6] == "vs")):
+            i -= 1
+            continue
+
+        # Get the game ID
+        gameID = seasonGames.loc[i, 'GAME_ID']
 
         # Pulls two rows, one for away stats one for home
         currentGame = games[(games.GAME_ID == gameID)].copy().reset_index()
@@ -58,18 +71,14 @@ def getSeason (games, gameDate):
                 away = currentGame.loc[j, 'TEAM_NAME']
                 awayPts = currentGame.loc[j, 'PTS']
 
-        # Increase the gameID to find the next game, then add '00' to front to match dataframe format
-        gameIDInt = int(gameID) + 1
-        gameID = "00" + str(gameIDInt)
-        print(gameID)
-
         # Add data to dataframe
         data = [gameDate, home, homePts, away, awayPts, winLoss]
         dataFrame.loc[i] = data
 
-        # Total number of games per season is 1230
-        i += 1
+        i -= 1
 
+    # Reset the index because it currently is out of order
+    dataFrame = dataFrame.reset_index()
     return dataFrame
 
 def getUpdatedSchedule ():
@@ -81,9 +90,6 @@ def getUpdatedSchedule ():
     df2021 = getSeason(games, '2021-10-19')
     df2022 = getSeason(games, '2022-10-18')
     dfCurrent = getSeason(games, '2023-10-24')
-
-    print("DF CURRENT:")
-    print(dfCurrent)
 
     # Get individual stats for historical seasons
     df2021['WL'] = df2021['WL'].astype('category')
@@ -148,8 +154,15 @@ def getUpdatedSchedule ():
 
     # Get index of last game that was played
     lastRow = dfCurrent.tail(1).index[0]
-    i = schedule.loc[(schedule['Date'] == dfCurrent.loc[lastRow, 'Game Date']) & (schedule['Home/Neutral'] == dfCurrent.loc[lastRow, 'Home'])].index[0]
-    i += 1
+    i = schedule.loc[(schedule['Date'] == dfCurrent.loc[lastRow, 'Game Date']) & (schedule['Home/Neutral'] == dfCurrent.loc[lastRow, 'Home'])].index[-1]
+
+    # Make sure we go to next date
+    date = schedule.loc[i, 'Date']
+    nextDate = schedule.loc[i, 'Date']
+    while (date == nextDate):
+        i += 1
+        nextDate = schedule.loc[i, 'Date']
+
     # Get rest of schedule
     # Loop through remaining index to create new dataframe with required data
     dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Away', 'Away Pts', 'WL'])
@@ -273,7 +286,7 @@ def populateScheduleStats (df):
     dataFrame = pd.DataFrame(columns=['Date', 'Home', 'Away', 'Win Percent Diff', 'WP vs. A Diff', 'Points Diff', 'Result'])
 
     for i in range(len(df)):
-        print(i)
+        #print(i)
 
         result = df.loc[i, 'WL']
         away = df.loc[i, 'Away']
