@@ -33,7 +33,7 @@ def getSeason (games, gameDate):
     print(i)
 
     # Create new dataframe to add all data to
-    dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Away', 'Away Pts', 'WL'])
+    dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Home TO', 'Away', 'Away Pts', 'Away TO', 'WL'])
 
     # Stop looping once we've found all games for the season
     while (i >= 0):
@@ -173,7 +173,7 @@ def getUpdatedSchedule ():
 
     # Get rest of schedule
     # Loop through remaining index to create new dataframe with required data
-    dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Away', 'Away Pts', 'WL'])
+    dataFrame = pd.DataFrame(columns=['Game Date', 'Home', 'Home Pts', 'Home TO', 'Away', 'Away Pts', 'Away TO', 'WL'])
     date = schedule.loc[i, 'Date']
     getDate = schedule.loc[i, 'Date']
     while (getDate == date):
@@ -181,14 +181,15 @@ def getUpdatedSchedule ():
         getDate = schedule.loc[i, 'Date']
         getAway = schedule.loc[i, 'Visitor/Neutral']
         getHome = schedule.loc[i, 'Home/Neutral']
-        data = [getDate, getHome, '0', getAway, '0', '-1']
+        # Use placeholders for future games
+        data = [getDate, getHome, '0', '0', getAway, '0', '0', '-1']
         dataFrame.loc[i] = data
         i += 1
 
     # Get stats for current season
     dfCurrent['WL'] = dfCurrent['WL'].astype('category')
     dfCurrent['WL'] = dfCurrent['WL'].cat.codes
-    dfCurrentPlayed = populateScheduleStats(dfCurrent)
+    dfCurrentPlayed = populateScheduleStats(dfCurrent.copy())
     dfCurrent = pd.concat([dfCurrent, dataFrame], axis=0, ignore_index=True)
     dfCurrentFull = populateScheduleStats(dfCurrent).to_csv('Upcoming_Games.csv')
     full_schedule = pd.concat([df2020Stats, df2021Stats, df2022Stats, dfCurrentPlayed], axis=0, ignore_index=True).to_csv('played.csv')
@@ -200,6 +201,8 @@ def getHomeAwayStats (df, date, home, away):
     awayW = 0
     homeTotal = 0
     awayTotal = 0
+    homeTO = 0
+    awayTO = 0
     homeVAwayW = 0
     awayVHomeW = 0
     totalV = 0
@@ -211,26 +214,32 @@ def getHomeAwayStats (df, date, home, away):
     while (checkDate != date):
         i += 1
 
+        # For each game in schedule get stats for home and away teams
         checkDate = df.loc[(i+1), 'Game Date']
         checkAway = df.loc[i, 'Away']
         checkHome = df.loc[i, 'Home']
         checkWin = int(df.loc[i, 'WL'])
         checkAwayPoints = int(df.loc[i, 'Away Pts'])
         checkHomePoints = int(df.loc[i, 'Home Pts'])
+        checkAwayTO = int(df.loc[i, 'Away TO'])
+        checkHomeTO = int(df.loc[i, 'Home TO'])
 
-        # Tally Wins and Losses for both the home and away team and get points
+        # Tally Wins and Losses for both the home and away team and get points, TO's
         homeHome = False
         homeAway = False
+        # Check if home team is home or away for this game
         if (home == checkAway):
             if (checkWin == 0):
                 homeW += 1
             homeTotal += 1
             homePoints += checkAwayPoints
+            homeTO += checkAwayTO
             homeAway = True
         elif (home == checkHome):
             homeW += checkWin
             homeTotal += 1
             homePoints += checkHomePoints
+            homeTO += checkHomeTO
             homeHome = True
 
         awayHome = False
@@ -240,11 +249,13 @@ def getHomeAwayStats (df, date, home, away):
                 awayW += 1
             awayTotal += 1
             awayPoints += checkAwayPoints
+            awayTO += checkAwayTO
             awayAway = True
         elif (away == checkHome):
             awayW += checkWin
             awayTotal += 1
             awayPoints += checkHomePoints
+            awayTO += checkHomeTO
             awayHome = True
 
         # Tally number of games won against each other so far
@@ -264,16 +275,20 @@ def getHomeAwayStats (df, date, home, away):
     # Get win percentages and averages
     homeWP = 0
     homeAveP = 0
+    homeAvgTO = 0
     awayWP = 0
     awayAveP = 0
+    awayAvgTO = 0
 
     if (homeTotal > 0):
         homeWP = homeW/homeTotal
         homeAveP = homePoints / homeTotal
+        homeAvgTO = homeTO / homeTotal
 
     if (awayTotal > 0):
         awayWP = awayW/awayTotal
         awayAveP = awayPoints / awayTotal
+        awayAvgTO = awayTO /awayTotal
 
     if (totalV > 0):
         homeVAwayWP = homeVAwayW/totalV
@@ -287,11 +302,12 @@ def getHomeAwayStats (df, date, home, away):
     wpDiff = homeWP - awayWP
     homeVAwayWPDiff = homeVAwayWP - awayVHomeWP
     pointsDiff = homeAveP - awayAveP
+    toDiff = homeAvgTO - awayAvgTO
 
-    return wpDiff, homeVAwayWPDiff, pointsDiff
+    return wpDiff, homeVAwayWPDiff, pointsDiff, toDiff
 
 def populateScheduleStats (df):
-    dataFrame = pd.DataFrame(columns=['Date', 'Home', 'Away', 'Win Percent Diff', 'WP vs. A Diff', 'Points Diff', 'Result'])
+    dataFrame = pd.DataFrame(columns=['Date', 'Home', 'Away', 'Win Percent Diff', 'WP vs. A Diff', 'Points Diff', 'TO Diff', 'Result'])
 
     for i in range(len(df)):
         #print(i)
@@ -301,9 +317,9 @@ def populateScheduleStats (df):
         home = df.loc[i, 'Home']
         date = df.loc[i, 'Game Date']
 
-        wpDiff, homeVAwayWPDiff, pointsDiff = getHomeAwayStats(df, date, home, away)
+        wpDiff, homeVAwayWPDiff, pointsDiff, toDiff = getHomeAwayStats(df, date, home, away)
 
-        data = [date, home, away, wpDiff, homeVAwayWPDiff, pointsDiff, result]
+        data = [date, home, away, wpDiff, homeVAwayWPDiff, pointsDiff, toDiff, result]
         dataFrame.loc[i] = data
 
 
@@ -329,9 +345,9 @@ upcomingGames_df = pd.read_csv("Upcoming_Games.csv", index_col=0)
 msk = np.random.rand(len(playedGames_df)) < 0.8
 train_df = playedGames_df[msk]
 # For testing accuracy
-#test_df = playedGames_df[~msk]
+test_df = playedGames_df[~msk]
 # For actual predictions
-test_df = upcomingGames_df.query('Date == "2023-11-20"')
+#test_df = upcomingGames_df.query('Date == "2023-11-20"')
 
 # Train model for logistic regression
 xTrain = train_df.drop(columns=['Date', 'Home', 'Away', 'Result'])
@@ -355,12 +371,12 @@ yPred = logReg.predict_proba(xTest)
 yPred = yPred[:,1]
 display(yPred,test_df)
 
-#ex = shap.Explainer(logReg.predict, shap.sample(xTest, 1000))
+ex = shap.Explainer(logReg.predict, shap.sample(xTest, 1000))
 
-#shapValues = ex(xTest)
+shapValues = ex(xTest)
 
 
-#shap.plots.beeswarm(shapValues)
+shap.plots.beeswarm(shapValues)
 
 # Gradient Boosting
 featureNames = xTest.columns.tolist()
