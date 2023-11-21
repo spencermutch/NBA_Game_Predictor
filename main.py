@@ -1,8 +1,10 @@
 
 from sklearn.datasets import make_classification
 from matplotlib import pyplot as plt
+import xgboost as xgb
 import shap
 from sklearn.linear_model import LogisticRegression
+import sklearn as sk
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import confusion_matrix
 import pandas as pd
@@ -67,12 +69,14 @@ def getSeason (games, gameDate):
                 home = currentGame.loc[j, 'TEAM_NAME']
                 homePts = currentGame.loc[j, 'PTS']
                 winLoss = currentGame.loc[j, 'WL']
+                homeTO = currentGame.loc[j, 'TOV']
             else:
                 away = currentGame.loc[j, 'TEAM_NAME']
                 awayPts = currentGame.loc[j, 'PTS']
+                awayTO = currentGame.loc[j, 'TOV']
 
         # Add data to dataframe
-        data = [gameDate, home, homePts, away, awayPts, winLoss]
+        data = [gameDate, home, homePts, homeTO, away, awayPts, awayTO, winLoss]
         dataFrame.loc[i] = data
 
         i -= 1
@@ -87,16 +91,20 @@ def getUpdatedSchedule ():
     games = gameFinder.get_data_frames()[0]
 
     # Get dataframe for each season
+    df2020 = getSeason(games, '2020-12-22')
     df2021 = getSeason(games, '2021-10-19')
     df2022 = getSeason(games, '2022-10-18')
     dfCurrent = getSeason(games, '2023-10-24')
 
     # Get individual stats for historical seasons
+    df2020['WL'] = df2020['WL'].astype('category')
+    df2020['WL'] = df2020['WL'].cat.codes
     df2021['WL'] = df2021['WL'].astype('category')
     df2021['WL'] = df2021['WL'].cat.codes
     df2022['WL'] = df2022['WL'].astype('category')
     df2022['WL'] = df2022['WL'].cat.codes
 
+    df2020Stats = populateScheduleStats(df2020)
     df2021Stats = populateScheduleStats(df2021)
     df2022Stats = populateScheduleStats(df2022)
 
@@ -183,7 +191,7 @@ def getUpdatedSchedule ():
     dfCurrentPlayed = populateScheduleStats(dfCurrent)
     dfCurrent = pd.concat([dfCurrent, dataFrame], axis=0, ignore_index=True)
     dfCurrentFull = populateScheduleStats(dfCurrent).to_csv('Upcoming_Games.csv')
-    full_schedule = pd.concat([df2021Stats, df2022Stats, dfCurrentPlayed], axis=0, ignore_index=True).to_csv('played.csv')
+    full_schedule = pd.concat([df2020Stats, df2021Stats, df2022Stats, dfCurrentPlayed], axis=0, ignore_index=True).to_csv('played.csv')
 
 def getHomeAwayStats (df, date, home, away):
     i = 0
@@ -310,7 +318,7 @@ def display (yPred, teams):
         print(f'The {homeTeam} have a probability of {winProb} of winning')
 
 # Update the schedule if needed
-getUpdatedSchedule()
+#getUpdatedSchedule()
 
 #games_df = pd.read_csv("full_schedule.csv", index_col=0)
 playedGames_df = pd.read_csv("played.csv", index_col=0)
@@ -323,7 +331,7 @@ train_df = playedGames_df[msk]
 # For testing accuracy
 #test_df = playedGames_df[~msk]
 # For actual predictions
-test_df = upcomingGames_df.query('Date == "2023-11-18"')
+test_df = upcomingGames_df.query('Date == "2023-11-20"')
 
 # Train model for logistic regression
 xTrain = train_df.drop(columns=['Date', 'Home', 'Away', 'Result'])
@@ -339,16 +347,37 @@ logReg = LogisticRegression(penalty='l1', dual=False, tol=0.001, C=1.0, fit_inte
 print(logReg.predict(xTrain))
 print(logReg.score(xTrain, yTrain))
 
-print(logReg.predict(xTest))
+testPred = logReg.predict(xTest)
+print(testPred)
 print(logReg.score(xTest, yTest))
 
 yPred = logReg.predict_proba(xTest)
 yPred = yPred[:,1]
 display(yPred,test_df)
 
-ex = shap.Explainer(logReg.predict, shap.sample(xTest,1000))
+#ex = shap.Explainer(logReg.predict, shap.sample(xTest, 1000))
 
-shapValues = ex(xTest)
+#shapValues = ex(xTest)
 
-shap.plots.beeswarm(shapValues)
 
+#shap.plots.beeswarm(shapValues)
+
+# Gradient Boosting
+featureNames = xTest.columns.tolist()
+featureNamesTrain = xTest.columns.tolist()
+dTest = xgb.DMatrix(xTest, yTest, feature_names=featureNames)
+dTrain = xgb.DMatrix(xTrain, yTrain, feature_names=featureNamesTrain)
+param = {'verbosity':1,
+         'objective':'binary:hinge',
+         'feature_selector': 'shuffle',
+         'booster':'gblinear',
+         'eval_metric' :'error',
+         'learning_rate': 0.85}
+evallist = [(dTrain, 'train'), (dTest, 'test')]
+numRound = 2000
+bst = xgb.train(param, dTrain, numRound, evallist)
+yPred = bst.predict(dTest)
+print(yPred)
+print("Accuracy of Test Model: ",sk.metrics.accuracy_score(yPred, yTest))
+#yPred = yPred[:,1]
+display(yPred,test_df)
